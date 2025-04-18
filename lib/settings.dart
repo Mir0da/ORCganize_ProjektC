@@ -1,0 +1,231 @@
+import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'theme_manager.dart';
+
+class SettingsPage extends StatefulWidget {
+  final ValueNotifier<ThemeMode> themeNotifier;
+  const SettingsPage({super.key, required this.themeNotifier});
+
+  @override
+  SettingsPageState createState() => SettingsPageState();
+}
+
+class SettingsPageState extends State<SettingsPage> {
+  String _theme = 'Dark'; // Options: 'Light', 'Dark', 'System'
+  String _status = 'Noch nicht getestet';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCurrentTheme();
+  }
+
+  // Lädt das aktuell gespeicherte Theme
+  Future<void> _loadCurrentTheme() async {
+    final currentTheme = await ThemeManager.loadTheme();
+    setState(() {
+      _theme = currentTheme;
+    });
+  }
+
+  // Speichern des Themes in SharedPreferences
+  Future<void> _saveTheme(String theme) async {
+    await ThemeManager.saveTheme(theme); // Speichert das ausgewählte Theme
+    widget.themeNotifier.value = ThemeManager.getThemeMode(theme); // Aktualisiere das Theme
+  }
+
+  Future<void> testConnection() async {
+    setState(() {
+      _status = 'Verbindung wird getestet...';
+    });
+
+    try {
+      final response = await http.get(Uri.parse('http://141.22.50.234:80/ping'));
+
+      if (response.statusCode == 200) {
+        setState(() {
+          _status = '✅ Verbindung erfolgreich!';
+        });
+      } else {
+        setState(() {
+          _status = '⚠️ Server antwortete mit Status: ${response.statusCode}';
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _status = '❌ Verbindung fehlgeschlagen: $e';
+      });
+    }
+  }
+
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Settings'),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16.0),
+        children: [
+          // 1. Server Connection Test (TODO)
+          ListTile(
+            title: const Text('Test Server Connection'),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Check if the app can connect to the server.'),
+                const SizedBox(height: 4),
+                Text(
+                  _status,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            onTap: testConnection,
+          ),
+
+          // 2. Theme Selection
+          ListTile(
+            title: const Text('Theme'),
+            subtitle: Text('Current theme: $_theme'),
+            onTap: () {
+              _showThemeDialog();
+            },
+          ),
+
+          // 3. Send Feedback & Bug Reports
+          ListTile(
+            title: const Text('Send Feedback & Bug Reports'),
+            subtitle: const Text('Report issues or suggest improvements.'),
+            onTap: () {
+              _showFeedbackDialog();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showThemeDialog() {
+    showDialog<String>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Select Theme'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              RadioListTile<String>(
+                title: const Text('Light'),
+                value: 'Light',
+                groupValue: _theme,
+                onChanged: (String? value) {
+                  Navigator.pop(context, value);
+                },
+              ),
+              RadioListTile<String>(
+                title: const Text('Dark'),
+                value: 'Dark',
+                groupValue: _theme,
+                onChanged: (String? value) {
+                  Navigator.pop(context, value);
+                },
+              ),
+              RadioListTile<String>(
+                title: const Text('System'),
+                value: 'System',
+                groupValue: _theme,
+                onChanged: (String? value) {
+                  Navigator.pop(context, value);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    ).then((String? value) {
+      if (value != null) {
+        setState(() {
+          _theme = value;
+          _saveTheme(value); // Speichern des Themes in SharedPreferences
+        });
+      }
+    });
+  }
+
+  void _showFeedbackDialog() {
+    final TextEditingController feedbackController = TextEditingController();
+    final TextEditingController emailController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Send Feedback'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: feedbackController,
+                maxLines: 4,
+                decoration: const InputDecoration(
+                  hintText: 'Enter your feedback or bug report here...',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: emailController,
+                decoration: const InputDecoration(
+                  hintText: 'Your email (optional)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              child: const Text('Cancel'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+            ElevatedButton(
+              child: const Text('Send'),
+              onPressed: () {
+                sendFeedbackToGoogleForm(
+                    feedbackController.text,
+                    emailController.text,
+                );
+                Navigator.of(context).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Vielen Dank für dein Feedback!')),
+                );
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> sendFeedbackToGoogleForm(String message, String email) async {
+    final uri = Uri.parse(
+        'https://docs.google.com/forms/u/0/d/e/1FAIpQLScE9gPmyW1UZ8J9oxrixhwooB0_TGfaramdL5gqWSqt_zkjFw/formResponse');
+
+    final response = await http.post(
+      uri,
+      body: {
+        'entry.2091146587': message, // Ersetze mit dem echten Entry-Code
+        'entry.996110799': email, // Optionales Feld
+      },
+    );
+
+    if (response.statusCode == 200 || response.statusCode == 302) {
+      print('Feedback erfolgreich gesendet!');
+    } else {
+      print('Fehler beim Senden: ${response.statusCode}');
+    }
+  }
+}
