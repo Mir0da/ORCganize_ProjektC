@@ -1,3 +1,5 @@
 fastapi
 uvicorn
 transformers
+pytorch
+ics
