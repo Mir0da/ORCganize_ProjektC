@@ -11,6 +11,8 @@ import 'package:flutter/services.dart' show SystemChrome, SystemUiMode, rootBund
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
+import 'upload_service.dart';
+import 'dart:convert';
 
 
 void main(){
@@ -147,40 +149,69 @@ class CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   }
 
   Future<void> _onPictureTaken(XFile image) async {
-    print("START CROP!");
     final croppedImage = await _startCrop(image.path);
-
-    if (croppedImage != null) {
-      if(_isHandwritten) {
-        print("Bild wird gesendet als Handwritten"); // TODO: An Server senden
-      }
-      else {
-        print("Bild wird gesendet als Text"); // TODO: An Server senden
-      }
-
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const LoadingPage()),
-      );
-
-// Dann Serveranfrage starten
-      final dummyData = await loadDummyData(); // Später echte Serverantwort
-      if (!context.mounted) return;
-
-// Danach: Weiterleitung zur Bearbeitung
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (_) => EditFormPage(data: dummyData, imagePath: croppedImage),
-        ),
-      );
-    }
 
     if (croppedImage == null) {
       print("Zuschneiden abgebrochen");
-      // Hier Kamera neu starten oder wieder anzeigen
-      return; // oder ggf. Navigator.pop(context) nur, wenn das zur Kameraseite führt
+      return;
     }
+
+    // Zeige Ladescreen
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const LoadingPage()),
+    );
+
+    final imageFile = File(croppedImage);
+    final serverResponse = await UploadService.uploadImage(
+      imageFile,
+      isHandwritten: _isHandwritten,
+    );
+
+    Map<String, dynamic>? parsedData;
+
+    if (serverResponse != null) {
+      print("Antwort vom Server: $serverResponse");
+
+      try {
+        final decoded = jsonDecode(serverResponse);
+        final fields = decoded['fields'];
+        parsedData = {
+          'Titel': fields['title'] ?? '',
+          'Datum': (fields['date'] ?? '').split(';'),
+          'Startzeit': (fields['start_time'] ?? '').split(';'),
+          'Endzeit': (fields['end_time'] ?? '').split(';'),
+          'Beschreibung': fields['description'] ?? '',
+          'Location': fields['location'] ?? '',
+          'Enddatum': (fields['end_date'] ?? '').split(';'),
+        };
+      } catch (e) {
+        print("Fehler beim Parsen: $e");
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Fehler beim Verarbeiten der Serverantwort.")),
+        );
+        parsedData = await loadDummyData(); // Fallback
+      }
+    } else {
+      print("Upload fehlgeschlagen – Dummydaten werden genutzt");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Fehler beim Upload. Dummydaten werden genutzt.")),
+      );
+      parsedData = await loadDummyData();
+    }
+
+    if (!context.mounted) return;
+
+    // Ladebildschirm durch EditForm ersetzen
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => EditFormPage(
+          data: parsedData!,
+          imagePath: croppedImage,
+        ),
+      ),
+    );
   }
 
   Future<String?> _startCrop(String imagePath) async {
