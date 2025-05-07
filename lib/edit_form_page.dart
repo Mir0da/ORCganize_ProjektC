@@ -5,9 +5,10 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:android_intent_plus/android_intent.dart';
 import 'package:android_intent_plus/flag.dart';
+import 'package:intl/intl.dart';
 
 class EditFormPage extends StatefulWidget {
-  final Map<String, String> data;
+  final Map<String, dynamic> data;
   final String? imagePath;
   const EditFormPage({super.key, required this.data, this.imagePath});
 
@@ -19,28 +20,101 @@ class _EditFormPageState extends State<EditFormPage> {
   final Map<String, TextEditingController> controllers = {};
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _dateController = TextEditingController();
+  final TextEditingController _endDateController = TextEditingController();
   final TextEditingController _startTimeController = TextEditingController();
   final TextEditingController _endTimeController = TextEditingController();
   final TextEditingController _descriptionController = TextEditingController();
   final TextEditingController _locationController = TextEditingController();
+  List<String> _availableDates = [];
+  List<String> _availableTimes = [];
+  int duration = 0;
+  bool _isAllDay = false;
+
 
 
   @override
   void initState() {
     super.initState();
+
+    // Textfelder: Titel, Beschreibung, Location
     _titleController.text = widget.data['Titel'] ?? '';
-    _dateController.text = widget.data['Datum'] ?? '';
-    _startTimeController.text = widget.data['Startzeit'] ?? '';
-    _endTimeController.text = widget.data['Endzeit'] ?? '';
     _descriptionController.text = widget.data['Beschreibung'] ?? '';
     _locationController.text = widget.data['Location'] ?? '';
 
+    // Dauer auslesen (optional)
+    duration = widget.data['duration'] ?? 0;
+
+    // Datumsliste vorbereiten
+    final List<String> dateList = _extractList(widget.data['Datum']);
+    final List<String> sortedDates = _sortDates(dateList);
+
+    String startDate = sortedDates.isNotEmpty ? sortedDates.first : '';
+    String endDate = sortedDates.length >= 2 ? sortedDates.last : startDate;
+
+    // Zeiten vorbereiten
+    final List<String> startTimes = _extractList(widget.data['Startzeit']);
+    final List<String> sortedStartTimes = _sortTimes(startTimes);
+
+    String startTime = sortedStartTimes.isNotEmpty ? sortedStartTimes.first : '';
+    String endTime = '';
+
+    if (sortedStartTimes.length >= 2) {
+      endTime = sortedStartTimes.last;
+    } else if (widget.data.containsKey('Endzeit')) {
+      final List<String> endTimes = _extractList(widget.data['Endzeit']);
+      final List<String> sortedEndTimes = _sortTimes(endTimes);
+      endTime = sortedEndTimes.isNotEmpty ? sortedEndTimes.first : '';
+    } else if (startTime.isNotEmpty) {
+      endTime = _calculateEndTime(startTime, duration > 0 ? duration : 2);
+    }
+
+    // Controller setzen
+    _dateController.text = startDate;
+    _endDateController.text = endDate;
+    _startTimeController.text = startTime;
+    _endTimeController.text = endTime;
+
+    // Listen für Dropdowns speichern
+    _availableDates = sortedDates;
+    _availableTimes = sortedStartTimes;
+
+    // Safety fallback
+    if (_availableDates.isEmpty) _availableDates.add('');
+    if (_availableTimes.isEmpty) _availableTimes.add('');
+
+    // Map füllen
     controllers['Titel'] = _titleController;
     controllers['Datum'] = _dateController;
+    controllers['Enddatum'] = _endDateController;
     controllers['Startzeit'] = _startTimeController;
     controllers['Endzeit'] = _endTimeController;
     controllers['Beschreibung'] = _descriptionController;
     controllers['Location'] = _locationController;
+  }
+
+  List<String> _extractList(dynamic value) {
+    if (value == null) return [];
+    if (value is List) return List<String>.from(value);
+    return [value.toString()];
+  }
+
+  List<String> _sortDates(List<String> dates) {
+    final format = DateFormat('dd.MM.yyyy');
+    return List<String>.from(dates)
+      ..sort((a, b) => format.parse(a).compareTo(format.parse(b)));
+  }
+
+  List<String> _sortTimes(List<String> times) {
+    final format = DateFormat('HH:mm');
+    return List<String>.from(times)
+      ..sort((a, b) => format.parse(a).compareTo(format.parse(b)));
+  }
+
+  String _calculateEndTime(String startTime, int durationHours) {
+    final format = DateFormat('HH:mm');
+    final start = format.parse(startTime);
+    final end = start.add(Duration(hours: durationHours));
+    return format.format(end);
   }
 
   @override
@@ -51,6 +125,7 @@ class _EditFormPageState extends State<EditFormPage> {
     _endTimeController.dispose();
     _descriptionController.dispose();
     _locationController.dispose();
+    _endDateController.dispose();
     super.dispose();
   }
 
@@ -63,7 +138,8 @@ class _EditFormPageState extends State<EditFormPage> {
   Future<void> _handleSave({required bool share}) async {
 
     // Endzeit berechnen, falls leer
-    if (_endTimeController.text.trim().isEmpty) {
+    if (_endTimeController.text.trim().isEmpty && !_isAllDay) {
+      print('Startzeit: ${_startTimeController.text}');
       _endTimeController.text = _calculateEndzeit(_startTimeController.text.trim());
     }
 
@@ -84,13 +160,28 @@ class _EditFormPageState extends State<EditFormPage> {
 
     final titel = _titleController.text.trim();
     final datum = _dateController.text.trim();
+    final enddatum = _endDateController.text.trim();
     final startzeit = _startTimeController.text.trim();
     final endzeit = _endTimeController.text.trim();
     final beschreibung = _descriptionController.text.trim();
     final ort = _locationController.text.trim();
 
-    final start = DateTime.parse("${_formatDateForParsing(datum)}T${_formatTimeForParsing(startzeit)}:00");
-    final end = DateTime.parse("${_formatDateForParsing(datum)}T${_formatTimeForParsing(endzeit)}:00");
+    final start = DateTime.parse("${_formatDateForParsing(datum)}T${_isAllDay ? '00:00' : _formatTimeForParsing(startzeit)}:00");
+    DateTime end;
+
+    if (enddatum.isEmpty) {
+      // Kein Enddatum: gleiche wie Start, plus Duration oder +2h
+      if (_isAllDay) {
+        end = start;
+      } else if (duration > 0) {
+        end = start.add(Duration(minutes: duration));
+      } else {
+        end = start.add(const Duration(hours: 2));
+      }
+    } else {
+      // Normale Verarbeitung mit Enddatum
+      end = DateTime.parse("${_formatDateForParsing(enddatum)}T${_isAllDay ? '00:00' : _formatTimeForParsing(endzeit)}:01");
+    }
 
     if (share) {
       await _exportAsCalendarEvent(titel, start, end, beschreibung, ort, share: true);
@@ -102,6 +193,7 @@ class _EditFormPageState extends State<EditFormPage> {
   String _formatDateForParsing(String input) {
     // "12.04.2025" → "2025-04-12"
     final parts = input.split('.');
+    if (parts.length != 3) return input; // fallback
     return "${parts[2]}-${parts[1].padLeft(2, '0')}-${parts[0].padLeft(2, '0')}";
   }
 
@@ -160,9 +252,28 @@ class _EditFormPageState extends State<EditFormPage> {
                 ),
               ),
             _buildTextField('Titel', _titleController),
-            _buildTextField('Datum', _dateController),
-            _buildTextField('Startzeit', _startTimeController),
-            _buildTextField('Endzeit', _endTimeController),
+            _availableDates.length > 1
+                ? _buildTextFieldWithDropdown(label:'Datum',options: _availableDates,controller: _dateController)
+                : _buildTextField('Datum', _dateController),
+            _availableDates.length > 1
+                ? _buildTextFieldWithDropdown(label:'Enddatum',options: _availableDates,controller: _endDateController)
+                : _buildTextField('Enddatum', _endDateController),
+            SwitchListTile(
+              title: const Text("Ganztägig"),
+              value: _isAllDay,
+              onChanged: (value) {
+                setState(() {
+                  _isAllDay = value;
+                });
+              },
+            ),
+
+            _availableTimes.length > 1
+                ? _buildTextFieldWithDropdown(label: 'Startzeit',options: _availableTimes,controller: _startTimeController, enabled: !_isAllDay,)
+                : _buildTextField('Startzeit', _startTimeController),
+            _availableTimes.length > 1
+                ? _buildTextFieldWithDropdown(label:'Endzeit',options: _availableTimes,controller: _endTimeController, enabled: !_isAllDay,)
+                : _buildTextField('Endzeit', _endTimeController),
             _buildTextField('Beschreibung', _descriptionController),
             _buildTextField('Location', _locationController),
 
@@ -201,11 +312,90 @@ class _EditFormPageState extends State<EditFormPage> {
         decoration: InputDecoration(
           labelText: label,
           border: const OutlineInputBorder(),
+          enabled: !(label.contains('zeit') && _isAllDay), // <— hier eingefügt
         ),
       ),
     );
   }
 
+
+  Widget _buildTextFieldWithDropdown({
+    required String label,
+    required List<String> options,
+    required TextEditingController controller,
+    bool enabled = true,
+  }) {
+    return StatefulBuilder(
+      builder: (context, setInnerState) {
+        final LayerLink _layerLink = LayerLink();
+        OverlayEntry? _overlayEntry;
+
+        void _showDropdown() {
+          _overlayEntry = OverlayEntry(
+            builder: (context) => Positioned(
+              width: MediaQuery.of(context).size.width - 64, // padding left+right
+              child: CompositedTransformFollower(
+                link: _layerLink,
+                showWhenUnlinked: false,
+                offset: const Offset(0, 56),
+                child: Material(
+                  elevation: 4.0,
+                  child: ListView(
+                    padding: EdgeInsets.zero,
+                    shrinkWrap: true,
+                    children: options.map((option) {
+                      return ListTile(
+                        title: Text(option),
+                        onTap: () {
+                          controller.text = option;
+                          _overlayEntry?.remove();
+                          _overlayEntry = null;
+                          setInnerState(() {});
+                        },
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
+            ),
+          );
+
+          Overlay.of(context).insert(_overlayEntry!);
+        }
+
+        void _hideDropdown() {
+          _overlayEntry?.remove();
+          _overlayEntry = null;
+        }
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12.0), // mehr Abstand
+          child: CompositedTransformTarget(
+            link: _layerLink,
+            child: TextFormField(
+              enabled: enabled,
+              controller: controller,
+              onChanged: (_) => setState(() {}),
+              decoration: InputDecoration(
+                labelText: label,
+                border: const OutlineInputBorder(),
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.arrow_drop_down),
+                  onPressed: () {
+                    if (_overlayEntry == null) {
+                      _showDropdown();
+                    } else {
+                      _hideDropdown();
+                    }
+                  },
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
 
   Future<void> _openCalendarWithEvent({
     required String title,
@@ -213,6 +403,7 @@ class _EditFormPageState extends State<EditFormPage> {
     required String location,
     required DateTime start,
     required DateTime end,
+    required bool isAllDay,
   }) async {
     final intent = AndroidIntent(
       action: 'android.intent.action.INSERT',
@@ -223,11 +414,45 @@ class _EditFormPageState extends State<EditFormPage> {
         'eventLocation': location,
         'beginTime': start.millisecondsSinceEpoch,
         'endTime': end.millisecondsSinceEpoch,
+        'allDay': isAllDay,
       },
       flags: <int>[Flag.FLAG_ACTIVITY_NEW_TASK],
     );
 
     await intent.launch();
+  }
+
+  String _generateIcsEntry({
+    required String titel,
+    required DateTime start,
+    required DateTime end,
+    required String beschreibung,
+    required String ort,
+    required bool isAllDay,
+  }) {
+    final startStr = isAllDay
+        ? start.toIso8601String().split('T').first.replaceAll('-', '')
+        : _formatDateTimeICS(start);
+    final endStr = isAllDay
+        ? end.toIso8601String().split('T').first.replaceAll('-', '')
+        : _formatDateTimeICS(end);
+
+    final dtStartPrefix = isAllDay ? 'DTSTART;VALUE=DATE:' : 'DTSTART:';
+    final dtEndPrefix = isAllDay ? 'DTEND;VALUE=DATE:' : 'DTEND:';
+
+    return '''
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//DeineApp//KalenderExport//DE
+BEGIN:VEVENT
+SUMMARY:$titel
+${dtStartPrefix}$startStr
+${dtEndPrefix}$endStr
+DESCRIPTION:$beschreibung
+LOCATION:$ort
+END:VEVENT
+END:VCALENDAR
+''';
   }
 
   Future<void> _exportAsCalendarEvent(
@@ -238,19 +463,14 @@ class _EditFormPageState extends State<EditFormPage> {
       String ort,
       {required bool share}
       ) async {
-    final icsContent = '''
-BEGIN:VCALENDAR
-VERSION:2.0
-PRODID:-//DeineApp//KalenderExport//DE
-BEGIN:VEVENT
-SUMMARY:$titel
-DTSTART:${_formatDateTimeICS(start)}
-DTEND:${_formatDateTimeICS(end)}
-DESCRIPTION:$beschreibung
-LOCATION:$ort
-END:VEVENT
-END:VCALENDAR
-''';
+    final icsContent = _generateIcsEntry(
+      titel: titel,
+      start: start,
+      end: end,
+      beschreibung: beschreibung,
+      ort: ort,
+      isAllDay: _isAllDay,
+    );
 
     final directory = await getTemporaryDirectory();
     final filePath = '${directory.path}/event.ics';
@@ -270,6 +490,7 @@ END:VCALENDAR
         location: ort,
         start: start,
         end: end,
+        isAllDay: _isAllDay,
       );
     }
   }

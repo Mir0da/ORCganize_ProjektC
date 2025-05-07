@@ -1,5 +1,5 @@
 Titel:
-Datum: 12.04.2025
-Startzeit: 20:00
+Datum: 12.04.2025; 26.01.2026
+Startzeit: 20:00; 18:00
 Location: Kulturzentrum Dortmund
 Beschreibung: blabla

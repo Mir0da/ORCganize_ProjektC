@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'theme_manager.dart';
+import 'dart:async';
 
 class SettingsPage extends StatefulWidget {
   final ValueNotifier<ThemeMode> themeNotifier;
@@ -39,8 +40,9 @@ class SettingsPageState extends State<SettingsPage> {
       _status = 'Verbindung wird getestet...';
     });
 
+
     try {
-      final response = await http.get(Uri.parse('http://141.22.50.234:80/ping'));
+      final response = await http.get(Uri.parse('http://141.22.50.234:80/ping')).timeout(const Duration(seconds: 5));
 
       if (response.statusCode == 200) {
         setState(() {
@@ -51,6 +53,10 @@ class SettingsPageState extends State<SettingsPage> {
           _status = '⚠️ Server antwortete mit Status: ${response.statusCode}';
         });
       }
+    } on TimeoutException {
+      setState(() {
+        _status = '⏰ Zeitüberschreitung – Server nicht erreichbar.';
+      });
     } catch (e) {
       setState(() {
         _status = '❌ Verbindung fehlgeschlagen: $e';
@@ -63,18 +69,18 @@ class SettingsPageState extends State<SettingsPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Settings'),
+        title: const Text('Einstellungen'),
       ),
       body: ListView(
         padding: const EdgeInsets.all(16.0),
         children: [
           // 1. Server Connection Test (TODO)
           ListTile(
-            title: const Text('Test Server Connection'),
+            title: const Text('Server Verbindung testen'),
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Check if the app can connect to the server.'),
+                const Text('Überprüfe ob die App eine Verbindung zum Server herstellen kann'),
                 const SizedBox(height: 4),
                 Text(
                   _status,
@@ -87,8 +93,8 @@ class SettingsPageState extends State<SettingsPage> {
 
           // 2. Theme Selection
           ListTile(
-            title: const Text('Theme'),
-            subtitle: Text('Current theme: $_theme'),
+            title: const Text('Thema auswählen'),
+            subtitle: Text('Aktuelles Thema: $_theme'),
             onTap: () {
               _showThemeDialog();
             },
@@ -96,8 +102,8 @@ class SettingsPageState extends State<SettingsPage> {
 
           // 3. Send Feedback & Bug Reports
           ListTile(
-            title: const Text('Send Feedback & Bug Reports'),
-            subtitle: const Text('Report issues or suggest improvements.'),
+            title: const Text('Feedback senden & Fehler melden'),
+            subtitle: const Text('Melde Fehler oder schlage Verbesserungen vor.'),
             onTap: () {
               _showFeedbackDialog();
             },
@@ -112,12 +118,12 @@ class SettingsPageState extends State<SettingsPage> {
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: const Text('Select Theme'),
+          title: const Text('Thema auswählen'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               RadioListTile<String>(
-                title: const Text('Light'),
+                title: const Text('Hell'),
                 value: 'Light',
                 groupValue: _theme,
                 onChanged: (String? value) {
@@ -125,7 +131,7 @@ class SettingsPageState extends State<SettingsPage> {
                 },
               ),
               RadioListTile<String>(
-                title: const Text('Dark'),
+                title: const Text('Dunkel'),
                 value: 'Dark',
                 groupValue: _theme,
                 onChanged: (String? value) {
@@ -162,7 +168,7 @@ class SettingsPageState extends State<SettingsPage> {
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: const Text('Send Feedback'),
+          title: const Text('Feedback senden'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -170,7 +176,7 @@ class SettingsPageState extends State<SettingsPage> {
                 controller: feedbackController,
                 maxLines: 4,
                 decoration: const InputDecoration(
-                  hintText: 'Enter your feedback or bug report here...',
+                  hintText: 'Gib uns hier dein Feedback oder melde einen Fehler...',
                   border: OutlineInputBorder(),
                 ),
               ),
@@ -178,7 +184,7 @@ class SettingsPageState extends State<SettingsPage> {
               TextField(
                 controller: emailController,
                 decoration: const InputDecoration(
-                  hintText: 'Your email (optional)',
+                  hintText: 'Deine email (optional)',
                   border: OutlineInputBorder(),
                 ),
               ),
@@ -186,13 +192,13 @@ class SettingsPageState extends State<SettingsPage> {
           ),
           actions: [
             TextButton(
-              child: const Text('Cancel'),
+              child: const Text('Abbrechen'),
               onPressed: () {
                 Navigator.of(context).pop();
               },
             ),
             ElevatedButton(
-              child: const Text('Send'),
+              child: const Text('Senden'),
               onPressed: () {
                 sendFeedbackToGoogleForm(
                     feedbackController.text,

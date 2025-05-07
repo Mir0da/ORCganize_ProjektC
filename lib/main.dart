@@ -1,5 +1,6 @@
 import 'edit_form_page.dart';
 import 'gallery_import.dart';
+import 'loading_page.dart';
 import 'settings.dart';
 import 'theme_manager.dart';
 
@@ -52,6 +53,8 @@ class CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   bool _isCameraInitialized = false;
   late final List<CameraDescription> _cameras;
   File? _latestGalleryImage;
+  bool _isHandwritten = true; // oben in CameraPageState hinzufügen
+
 
   @override
   void initState() {
@@ -144,16 +147,31 @@ class CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   }
 
   Future<void> _onPictureTaken(XFile image) async {
+    print("START CROP!");
     final croppedImage = await _startCrop(image.path);
 
     if (croppedImage != null) {
-      print("Bild wird gesendet"); // TODO: An Server senden
+      if(_isHandwritten) {
+        print("Bild wird gesendet als Handwritten"); // TODO: An Server senden
+      }
+      else {
+        print("Bild wird gesendet als Text"); // TODO: An Server senden
+      }
 
-      final dummyData = await loadDummyData(); // wie vorher
       Navigator.push(
         context,
+        MaterialPageRoute(builder: (_) => const LoadingPage()),
+      );
+
+// Dann Serveranfrage starten
+      final dummyData = await loadDummyData(); // Später echte Serverantwort
+      if (!context.mounted) return;
+
+// Danach: Weiterleitung zur Bearbeitung
+      Navigator.pushReplacement(
+        context,
         MaterialPageRoute(
-          builder: (context) => EditFormPage(data: dummyData, imagePath: croppedImage),
+          builder: (_) => EditFormPage(data: dummyData, imagePath: croppedImage),
         ),
       );
     }
@@ -191,22 +209,31 @@ class CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     // UI wieder zurücksetzen (StatusBar & NavBar anzeigen)
     await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
+    print("SUCCESS CROP!");
     return cropped?.path;
   }
 
   // Funktion zum Laden der Dummy-Daten aus einer Datei
-  Future<Map<String, String>> loadDummyData() async {
+  Future<Map<String, dynamic>> loadDummyData() async {
+
+    print("BEGIN LOAD DATA!");
     final raw = await rootBundle.loadString('assets/dummy_data.txt');
     final lines = raw.split('\n');
-    Map<String, String> data = {};
+    Map<String, dynamic> data = {};
     for (var line in lines) {
       final parts = line.split(':');
       if (parts.length >= 2) {
-        final key = parts[0].trim();
-        final value = parts.sublist(1).join(':').trim(); // falls ":" im Text vorkommt
-        data[key] = value;
+        final key = parts[0].trim().replaceAll('"', '');
+        final value = parts.sublist(1).join(':').trim();
+        if ((key == 'Datum' || key == 'Startzeit' || key == 'Enddatum' || key == 'Endzeit') && value.isNotEmpty) {
+          data[key] = value.split(';').map((e) => e.trim()).toList();
+        } else {
+          data[key] = value;
+        }
       }
     }
+
+    print("SUCCESS!");
     return data;
   }
 
@@ -286,6 +313,29 @@ class CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                             : null,
                       ),
                     ),
+                    // Toggle-Switch
+                    Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          _isHandwritten ? 'Handschrift' : 'Druckschrift',
+                          style: TextStyle(
+                            color: _getContrastColor(context),
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Switch(
+                          value: _isHandwritten,
+                          activeColor: Colors.indigo,
+                          onChanged: (value) {
+                            setState(() {
+                              _isHandwritten = value;
+                            });
+                          },
+                        ),
+                      ],
+                    ),
+                    //Setting Button
                     IconButton(
                       icon: Icon(Icons.settings, color: _getContrastColor(context), size: 28),
                       onPressed: () {
