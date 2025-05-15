@@ -1,6 +1,3 @@
-
-from ics import Calendar, Event
-from ics.grammar.parse import ContentLine
 import re
 import dateparser
 
@@ -137,99 +134,144 @@ def date_normalizer(text):
   text, wiederholend = normalize_date_expressions(text)
   return text, wiederholend
 
+def check_for_full_day(time):
+  if(time == '00:11'):
+    return 'Ganztägig'
+  return time
 
 ### Prepare ics data ------------------------------------------------
 
-def prepare_ics_name(name_tokens):
-  ics_name = ''
+def prepare_name(name_tokens):
+  name = ''
   for token in name_tokens:
-    ics_name += token + '|'
-  return ics_name[:-1]
+    name += token + '|'
+  if not name == '':
+    name = name[:-1]
+  return name
 
-def prepare_ics_description(link_tokens):
-  ics_description = ''
+def prepare_description(link_tokens):
+  description = ''
   for token in link_tokens:
     token_no_spaces = token.replace(' ', '')
-    ics_description += token_no_spaces + '|'
-  return ics_description[:-1]
+    description += token_no_spaces + '|'
+  if not description == '':
+    description = description[:-1]
+  return description
 
-def prepare_ics_location(location_tokens):
-  ics_location = ''
+def prepare_location(location_tokens):
+  location = ''
   for token in location_tokens:
-    ics_location += token + ' '
-  return ics_location[:-1]
+    location += token + ' '
+  if not location == '':
+    location = location[:-1]
+  return location
 
-def prepare_ics_datetime(date_tokens, time_tokens):
-  ics_datetime = ''
-  repeats = False
+def prepare_date(date_tokens):
+  dates = []
+  repeats = []
 
-  if(time_tokens == []):
-    time_tokens = ["00:11"]   #Default, Code für Ganztägig
-  if(date_tokens == []):
-    date_tokens = ["Heute"]   #Default
+  if(date_tokens == []):      #Default on Empty
+    date_tokens = ["Heute"]   
 
-  
-  date = ''
-  for token in date_tokens:
-    date += token + ' '
-  date = date[:-1]
-  norm_date, repeats = date_normalizer(date)
-
-  time = ''
-  for token in time_tokens:
-    time += token + ' '
-  time = time[:-1]
-  norm_time = time_normalizer(time)
-  try:
-    datetime = norm_date + ' ' + norm_time
-    ics_datetime = dateparser.parse(datetime, settings={'PREFER_DATES_FROM': 'future',"PREFER_MONTH_OF_YEAR": "current"}, languages=['de']).strftime("%Y-%m-%d %H:%M:%S") #YYYY-MM-DD HH:mm:ss
-  except:
-    try: 
-      datetime = norm_date + ' 00:11' #Default, Code für Ganztägig
-      ics_datetime = dateparser.parse(datetime, settings={'PREFER_DATES_FROM': 'future',"PREFER_MONTH_OF_YEAR": "current"}, languages=['de']).strftime("%Y-%m-%d %H:%M:%S") #YYYY-MM-DD HH:mm:ss
+  #Try all tokens combined
+  if(len(date_tokens) > 1):
+    date = ''           
+    for token in date_tokens:
+      date += token + ' '
+    date = date[:-1]
+    all_tokens_date, all_tokens_repeats = date_normalizer(date)
+    try:
+      datetime_input = all_tokens_date 
+      datetime = dateparser.parse(datetime_input, settings={'PREFER_DATES_FROM': 'future',"PREFER_MONTH_OF_YEAR": "current"}, languages=['de']).strftime("%Y-%m-%d") #YYYY-MM-DD
+      dates.append(datetime)
+      repeats.append(all_tokens_repeats)
     except:
-      try: 
-        datetime = 'Heute ' + norm_time #Default
-        ics_datetime = dateparser.parse(datetime, settings={'PREFER_DATES_FROM': 'future',"PREFER_MONTH_OF_YEAR": "current"}, languages=['de']).strftime("%Y-%m-%d %H:%M:%S") #YYYY-MM-DD HH:mm:ss
-      except:
-        datetime = 'Heute 00:11' #Default
-        ics_datetime = dateparser.parse(datetime, settings={'PREFER_DATES_FROM': 'future',"PREFER_MONTH_OF_YEAR": "current"}, languages=['de']).strftime("%Y-%m-%d %H:%M:%S") #YYYY-MM-DD HH:mm:ss
+      pass
+  #Try Singular Tokens
+  for token in date_tokens:
+    token_date, token_repeats = date_normalizer(token)
+    try:
+      datetime_input = token_date 
+      datetime = dateparser.parse(datetime_input, settings={'PREFER_DATES_FROM': 'future',"PREFER_MONTH_OF_YEAR": "current"}, languages=['de']).strftime("%Y-%m-%d") #YYYY-MM-DD
+      dates.append(datetime)
+      repeats.append(token_repeats)
+    except:
+      pass
   
-  return ics_datetime, repeats
+  if(len(dates) == 0):    #Default on only Errors
+    default_date = dateparser.parse("Heute", settings={'PREFER_DATES_FROM': 'future',"PREFER_MONTH_OF_YEAR": "current"}, languages=['de']).strftime("%Y-%m-%d") #YYYY-MM-DD
+    dates.append(default_date)
+    repeats.append(False)
 
-def prepare_ics_duration(duration_tokens):      #Unvollständig <-----------
+  return dates, repeats
+
+def prepare_time(time_tokens):
+  times = []
+
+  if(time_tokens == []):      #Default on Empty
+    time_tokens = ["00:11"]   
+
+  #Try all tokens combined
+  if(len(time_tokens) > 1):
+    time = ''           
+    for token in time_tokens:
+      time += token + ' '
+    time = time[:-1]
+    all_tokens_time = time_normalizer(time)
+    try:
+      datetime_input = all_tokens_time 
+      datetime = dateparser.parse(datetime_input, settings={'PREFER_DATES_FROM': 'future',"PREFER_MONTH_OF_YEAR": "current"}, languages=['de']).strftime("%H:%M") #HH:mm
+      datetime = check_for_full_day(datetime)
+      times.append(datetime)
+    except:
+      pass
+  #Try Singular Tokens
+  for token in time_tokens:
+    token_time = time_normalizer(token)
+    try:
+      datetime_input = token_time 
+      datetime = dateparser.parse(datetime_input, settings={'PREFER_DATES_FROM': 'future',"PREFER_MONTH_OF_YEAR": "current"}, languages=['de']).strftime("%H:%M") #HH:mm
+      datetime = check_for_full_day(datetime)
+      times.append(datetime)
+    except:
+      pass
+  
+  if(len(times) == 0):    #Default on only Errors
+    times.append("Ganztägig")
+
+  return times
+
+
+def prepare_duration(duration_tokens):      #Unvollständig <-----------
   if(duration_tokens == []):
     return 1
   return duration_tokens[0]
 
 
-### Create ics ------------------------------------------------
+### Create Entry File ------------------------------------------------
 
-def create_ics(name_tokens, date_tokens, time_tokens, location_tokens, duration_tokens, link_tokens):
-  ics_name = prepare_ics_name(name_tokens)
-  ics_description = prepare_ics_description(link_tokens)
-  ics_location = prepare_ics_location(location_tokens)
-  ics_datetime, repeats = prepare_ics_datetime(date_tokens, time_tokens)
-  ics_duration = prepare_ics_duration(duration_tokens)
+def create_file_content(name_tokens, date_tokens, time_tokens, location_tokens, duration_tokens, link_tokens):
+  name = prepare_name(name_tokens)
+  description = prepare_description(link_tokens)
+  location = prepare_location(location_tokens)
+  dates, repeats = prepare_date(date_tokens)
+  times = prepare_time(time_tokens)
+  duration = prepare_duration(duration_tokens)
 
-  c = Calendar()
-  e = Event()
-  e.name = ics_name
-  e.begin = ics_datetime
-  #e.end = ics_datetime + 'T' + ics_duration + ':00'  #Noch Pseudo-Code
-  #e.duration = (ics_duration + ':00')
-  e.description = ics_description
-  e.location = ics_location
+  content = 'Titel: ' + name + '\n'
+  content += 'Datum: ['
+  for date in dates:
+    content += date + ', '
+  content = content[:-2]
+  content += ']\n'
+  content += 'Startzeit: ['
+  for time in times:
+    content += time + ', '
+  content = content[:-2]
+  content += ']\n'
+  content += 'Location: ' + location + '\n'
+  content += 'Beschreibung: ' + description + '\n'
+  content += 'Dauer: ' + str(duration) + 'h\n'
+  
+  return content
 
-  found_match = re.search(r'00:11', ics_datetime, flags=re.IGNORECASE)  #Abfrage nach Code 00:11
-  if(found_match):
-    e.make_all_day() 
-
-  if(repeats):
-    e.extra.append(
-      ContentLine(name="RRULE", value="FREQ=WEEKLY;COUNT=4")    #Default = 4? oder Infinite?
-    )
-
-  c.events.add(e)
-
-  return c.serialize()
