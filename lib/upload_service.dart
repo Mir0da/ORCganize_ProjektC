@@ -6,7 +6,9 @@ import 'package:path/path.dart';
 class UploadService {
   // Beispiel: printed = false, handwritten = true
   static Future<String> uploadImage(File imageFile, {required bool handwritten}) async {
-    final uri = Uri.parse("http://10.0.2.2:8000/image_upload");
+    //final uri = Uri.parse("http://141.22.50.234:80/image_upload");    //Wifi Debugging + UniServer
+    //final uri = Uri.parse("http://10.0.2.2:8000/image_upload");   //Emulator + HeimPC
+    final uri = Uri.parse("http://192.168.178.100:8000/image_upload");    //Wifi Debugging + Heim PC
 
     final request = http.MultipartRequest('POST', uri)
       ..files.add(await http.MultipartFile.fromPath('file', imageFile.path))

@@ -47,12 +47,14 @@ class SettingsPageState extends State<SettingsPage> {
 
 
     try {
-//      final response = await http.get(Uri.parse('http://141.22.50.234:80/ping')).timeout(const Duration(seconds: 5));
-      final response = await http.get(Uri.parse('http://10.0.2.2:8000/ping')).timeout(const Duration(seconds: 5));
+//      final response = await http.get(Uri.parse('http://141.22.50.234:80/ping')).timeout(const Duration(seconds: 5)); //UniServer
+//      final response = await http.get(Uri.parse('http://10.0.2.2:8000/ping')).timeout(const Duration(seconds: 5));      //Emulator + Heim PC
+      final response = await http.get(Uri.parse('http://192.168.178.100:8000/ping')).timeout(const Duration(seconds: 5));      //Test auf Real Gerät, server auf HeimPC
+
 
       if (response.statusCode == 200) {
         setState(() {
-          _status = '✅ Verbindung erfolgreich! 10.0.2.2:8000/';
+          _status = '✅ Verbindung erfolgreich! Server IP: 192.168.178.100';
         });
       } else {
         setState(() {
@@ -69,35 +71,6 @@ class SettingsPageState extends State<SettingsPage> {
       });
     }
   }
-
-  // In SettingsPage o.ä., nur dev:
-// MINI-DUMMY-UPLOAD
-  Future<void> testUploadProbe() async {
-    try {
-      // Lies eine winzige Datei aus assets:
-      final bytes = await rootBundle.load('assets/Hase.png');
-      final tmp = await getTemporaryDirectory();
-      final f = File('${tmp.path}/probe.png');
-      await f.writeAsBytes(bytes.buffer.asUint8List());
-
-      final resp = await UploadService.uploadImage(f, handwritten: true);
-      if (resp != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Upload-Probe: OK ✅')),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Upload-Probe: keine Antwort ❌')),
-        );
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Upload-Probe Fehler: $e')),
-      );
-    }
-  }
-
-
 
   @override
   Widget build(BuildContext context) {
