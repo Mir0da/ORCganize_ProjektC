@@ -36,6 +36,23 @@ class _EditFormPageState extends State<EditFormPage> {
   void initState() {
     super.initState();
 
+    //Sinnvolle Daten?
+    final criticalKeys = ['Titel', 'Datum', 'Startzeit', 'Location'];
+    final allEmpty = criticalKeys.every((key) =>
+    widget.data[key] == null || widget.data[key].toString().trim().isEmpty);
+
+    if (allEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('⚠️ Auf dem Bild konnten leider keine Daten erkannt werden.'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      });
+    }
+
     // Textfelder: Titel, Beschreibung, Location
     _titleController.text = widget.data['Titel'] ?? '';
     _descriptionController.text = widget.data['Beschreibung'] ?? '';
@@ -48,25 +65,46 @@ class _EditFormPageState extends State<EditFormPage> {
     final List<String> dateList = _extractList(widget.data['Datum']);
     final List<String> sortedDates = _sortDates(dateList);
 
-    String startDate = sortedDates.isNotEmpty ? sortedDates.first : '';
+    String startDate = sortedDates.isNotEmpty ? sortedDates.first : DateFormat('dd.MM.yyyy').format(DateTime.now());
     String endDate = sortedDates.length >= 2 ? sortedDates.last : startDate;
 
     // Zeiten vorbereiten
     final List<String> startTimes = _extractList(widget.data['Startzeit']);
-    final List<String> sortedStartTimes = _sortTimes(startTimes);
 
-    String startTime = sortedStartTimes.isNotEmpty ? sortedStartTimes.first : '';
+    // Diese Variablen VORHER definieren!
+    String startTime = '';
     String endTime = '';
+    List<String> sortedStartTimes = [];
 
-    if (sortedStartTimes.length >= 2) {
-      endTime = sortedStartTimes.last;
-    } else if (widget.data.containsKey('Endzeit')) {
-      final List<String> endTimes = _extractList(widget.data['Endzeit']);
-      final List<String> sortedEndTimes = _sortTimes(endTimes);
-      endTime = sortedEndTimes.isNotEmpty ? sortedEndTimes.first : '';
-    } else if (startTime.isNotEmpty) {
-      endTime = _calculateEndTime(startTime, duration > 0 ? duration : 2);
+    // Sonderfall: enthält einen Ganztägig-Wert?
+    if (startTimes.any((t) => t.toLowerCase().contains('ganztägig'))) {
+      _isAllDay = true;
+      _startTimeController.text = '';
+      _endTimeController.text = '';
+    } else {
+      sortedStartTimes = _sortTimes(startTimes);
+      startTime = sortedStartTimes.isNotEmpty ? sortedStartTimes.first : '';
+      endTime = '';
+
+      if (sortedStartTimes.length >= 2) {
+        endTime = sortedStartTimes.last;
+      } else if (widget.data.containsKey('Endzeit')) {
+        final List<String> endTimes = _extractList(widget.data['Endzeit']);
+        final List<String> sortedEndTimes = _sortTimes(endTimes);
+        endTime = sortedEndTimes.isNotEmpty ? sortedEndTimes.first : '';
+      } else if (startTime.isNotEmpty) {
+        endTime = _calculateEndTime(startTime, duration > 0 ? duration : 2);
+      }
+
+      _startTimeController.text = startTime;
+      _endTimeController.text = endTime;
+
+      _availableTimes = sortedStartTimes;
     }
+
+// Safety fallback
+    if (_availableTimes.isEmpty) _availableTimes.add('');
+
 
     // Controller setzen
     _dateController.text = startDate;
@@ -105,9 +143,12 @@ class _EditFormPageState extends State<EditFormPage> {
   }
 
   List<String> _sortTimes(List<String> times) {
-    final format = DateFormat('HH:mm');
-    return List<String>.from(times)
-      ..sort((a, b) => format.parse(a).compareTo(format.parse(b)));
+    final validTimes = times.where((t) => RegExp(r'^\d{1,2}:\d{2}$').hasMatch(t)).toList();
+
+    validTimes.sort((a, b) =>
+        DateFormat("HH:mm").parse(a).compareTo(DateFormat("HH:mm").parse(b)));
+
+    return validTimes;
   }
 
   String _calculateEndTime(String startTime, int durationHours) {
@@ -147,7 +188,7 @@ class _EditFormPageState extends State<EditFormPage> {
       final missingFields = [];
       if (_titleController.text.trim().isEmpty) missingFields.add('Titel');
       if (_dateController.text.trim().isEmpty) missingFields.add('Datum');
-      if (_startTimeController.text.trim().isEmpty) missingFields.add('Startzeit');
+      if (!_isAllDay && _startTimeController.text.isEmpty) missingFields.add('Startzeit');
 
       final message =
           'Die Felder ${missingFields.join(', ')} dürfen nicht leer sein.';

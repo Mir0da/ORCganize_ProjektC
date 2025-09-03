@@ -1,34 +1,27 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
-import 'package:path/path.dart' as path;
+import 'package:path/path.dart';
 
 class UploadService {
-  static Future<String?> uploadImage(File imageFile, {required bool isHandwritten}) async {
-    final uri = Uri.parse("http://141.22.50.234:80/upload");
+  // Beispiel: printed = false, handwritten = true
+  static Future<String> uploadImage(File imageFile, {required bool handwritten}) async {
+    final uri = Uri.parse("http://10.0.2.2:8000/image_upload");
 
-    final request = http.MultipartRequest("POST", uri);
-    request.fields['type'] = isHandwritten ? 'handwritten' : 'printed';
-    request.files.add(
-      await http.MultipartFile.fromPath(
-        'image',
-        imageFile.path,
-        filename: path.basename(imageFile.path),
-      ),
-    );
+    final request = http.MultipartRequest('POST', uri)
+      ..files.add(await http.MultipartFile.fromPath('file', imageFile.path))
+      ..fields['handwritten'] = handwritten.toString();
 
-    try {
-      final streamedResponse = await request.send();
-      final response = await http.Response.fromStream(streamedResponse);
+    final res = await request.send();
+    final resp = await http.Response.fromStream(res);
 
-      if (response.statusCode == 200) {
-        return response.body; // oder ggf. JSON dekodieren
-      } else {
-        print("Upload fehlgeschlagen: ${response.statusCode}");
-      }
-    } catch (e) {
-      print("Fehler beim Upload: $e");
-    }
+    // <-- wichtig für Debug:
+    print('UPLOAD ${resp.statusCode}: ${resp.body}');
 
-    return null;
+    if (resp.statusCode == 200) return resp.body;
+    // Gib die Server-Fehlermeldung nach oben weiter:
+    throw Exception('Upload failed: ${resp.statusCode} ${resp.body}');
   }
+
 }
+

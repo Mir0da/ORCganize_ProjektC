@@ -12,7 +12,6 @@ import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'upload_service.dart';
-import 'dart:convert';
 
 
 void main(){
@@ -73,6 +72,18 @@ class CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     themeNotifier.value = ThemeManager.getThemeMode(theme); // Setze den ThemeMode im Notifier
   }
 
+  /// Nimmt entweder eine Liste, einen String (mit ';' getrennt) oder null
+  /// und gibt IMMER eine List<String> zurück (bereinigt, ohne Leereinträge).
+  List<String> _normalizeList(dynamic raw) {
+    if (raw == null) return [];
+    if (raw is List) {
+      return raw.map((e) => e.toString().trim()).where((e) => e.isNotEmpty).toList();
+    }
+    if (raw is String) {
+      return raw.split(';').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    }
+    return [];
+  }
 
   Future<void> initCamera() async {
     _cameras = await availableCameras();
@@ -116,6 +127,36 @@ class CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     }
   }
 
+  Map<String, dynamic> _parseServerText(String raw) {
+    final lines = raw.split('\n');
+    final Map<String, dynamic> data = {};
+
+    for (var line in lines) {
+      if (line.trim().isEmpty) continue;
+      final parts = line.split(':');
+      if (parts.length >= 2) {
+        final key = parts[0].trim();
+        final value = parts.sublist(1).join(':').trim();
+
+        // ✔ Kommagetrennt ODER Semikolon-getrennt akzeptieren, Klammern entfernen
+        bool isListField = (key == 'Datum' || key == 'Startzeit' || key == 'Endzeit');
+        if (isListField && value.isNotEmpty) {
+          final cleaned = value.replaceAll('[', '').replaceAll(']', '');
+          data[key] = cleaned
+              .split(RegExp(r'[;,]'))             // <— neu: , oder ; als Trenner
+              .map((e) => e.trim())
+              .where((e) => e.isNotEmpty)
+              .toList();
+        } else {
+          data[key] = value;
+        }
+      }
+    }
+
+    return data;
+  }
+
+
   @override
   void dispose() {
     _controller?.dispose();
@@ -150,60 +191,56 @@ class CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
 
   Future<void> _onPictureTaken(XFile image) async {
     final croppedImage = await _startCrop(image.path);
-
     if (croppedImage == null) {
-      print("Zuschneiden abgebrochen");
+      // Zuschneiden abgebrochen
       return;
     }
 
-    // Zeige Ladescreen
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const LoadingPage()),
-    );
-
-    final imageFile = File(croppedImage);
-    final serverResponse = await UploadService.uploadImage(
-      imageFile,
-      isHandwritten: _isHandwritten,
+    // 1) Loading-Dialog öffnen (modal, nicht wegklickbar)
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(
+        child: CircularProgressIndicator(),
+      ),
     );
 
     Map<String, dynamic>? parsedData;
 
-    if (serverResponse != null) {
-      print("Antwort vom Server: $serverResponse");
+    try {
+      // 2) Upload starten (mit Timeout – passe Dauer bei Bedarf an)
+      final imageFile = File(croppedImage);
+      final serverResponse = await UploadService
+          .uploadImage(imageFile, handwritten: _isHandwritten)
+          .timeout(const Duration(seconds: 30));
 
-      try {
-        final decoded = jsonDecode(serverResponse);
-        final fields = decoded['fields'];
-        parsedData = {
-          'Titel': fields['title'] ?? '',
-          'Datum': (fields['date'] ?? '').split(';'),
-          'Startzeit': (fields['start_time'] ?? '').split(';'),
-          'Endzeit': (fields['end_time'] ?? '').split(';'),
-          'Beschreibung': fields['description'] ?? '',
-          'Location': fields['location'] ?? '',
-          'Enddatum': (fields['end_date'] ?? '').split(';'),
-        };
-      } catch (e) {
-        print("Fehler beim Parsen: $e");
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Fehler beim Verarbeiten der Serverantwort.")),
-        );
-        parsedData = await loadDummyData(); // Fallback
+      if (serverResponse != null && serverResponse.isNotEmpty) {
+
+        // Falls der Server "Text"-Antwort liefert
+        parsedData = _parseServerText(serverResponse);
+        print("Succsess Upload");
+
+      } else {
+        // Fallback: Dummy-Daten
+        print("Fallback auf Dummy-Daten!");
+        parsedData = await loadDummyData();
       }
-    } else {
-      print("Upload fehlgeschlagen – Dummydaten werden genutzt");
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Fehler beim Upload. Dummydaten werden genutzt.")),
-      );
+    } catch (e) {
+      // Fehler -> Fallback auf Dummy-Daten
+      print("Failed to upload image: $e");
       parsedData = await loadDummyData();
+    } finally {
+      // 3) Loading-Dialog schließen (wenn noch offen)
+      if (mounted && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
     }
 
-    if (!context.mounted) return;
+    if (!mounted) return;
 
-    // Ladebildschirm durch EditForm ersetzen
-    Navigator.pushReplacement(
+    // 4) Zur Edit-Seite navigieren
+    Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => EditFormPage(
@@ -213,6 +250,7 @@ class CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       ),
     );
   }
+
 
   Future<String?> _startCrop(String imagePath) async {
 
@@ -263,8 +301,6 @@ class CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         }
       }
     }
-
-    print("SUCCESS!");
     return data;
   }
 
@@ -370,11 +406,11 @@ class CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                     IconButton(
                       icon: Icon(Icons.settings, color: _getContrastColor(context), size: 28),
                       onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (context) => SettingsPage(themeNotifier: themeNotifier)),
+                        Navigator.push( context,
+                          MaterialPageRoute(builder:
+                              (context) => SettingsPage(themeNotifier: themeNotifier)),
                         );
-                      },
+                        },
                     ),
                   ],
                 ),
