@@ -47,14 +47,14 @@ class SettingsPageState extends State<SettingsPage> {
 
 
     try {
-//      final response = await http.get(Uri.parse('http://141.22.50.234:80/ping')).timeout(const Duration(seconds: 5)); //UniServer
+      final response = await http.get(Uri.parse('http://141.22.50.234:8000/ping')).timeout(const Duration(seconds: 10)); //UniServer
 //      final response = await http.get(Uri.parse('http://10.0.2.2:8000/ping')).timeout(const Duration(seconds: 5));      //Emulator + Heim PC
-      final response = await http.get(Uri.parse('http://192.168.178.100:8000/ping')).timeout(const Duration(seconds: 5));      //Test auf Real Gerät, server auf HeimPC
+//      final response = await http.get(Uri.parse('http://192.168.178.100:8000/ping')).timeout(const Duration(seconds: 5));      //Test auf Real Gerät, server auf HeimPC
 
 
       if (response.statusCode == 200) {
         setState(() {
-          _status = '✅ Verbindung erfolgreich! Server IP: 192.168.178.100';
+          _status = '✅ Verbindung erfolgreich!';
         });
       } else {
         setState(() {
@@ -81,7 +81,6 @@ class SettingsPageState extends State<SettingsPage> {
       body: ListView(
         padding: const EdgeInsets.all(16.0),
         children: [
-          // 1. Server Connection Test (TODO)
           ListTile(
             title: const Text('Server Verbindung testen'),
             subtitle: Column(

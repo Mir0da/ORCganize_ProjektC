@@ -2,7 +2,8 @@ import 'edit_form_page.dart';
 import 'gallery_import.dart';
 import 'loading_page.dart';
 import 'settings.dart';
-import 'theme_manager.dart';
+import 'theme_manager.dart';import 'upload_service.dart';
+
 
 import 'package:image_cropper/image_cropper.dart';
 import 'package:camera/camera.dart';
@@ -11,7 +12,7 @@ import 'package:flutter/services.dart' show SystemChrome, SystemUiMode, rootBund
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
-import 'upload_service.dart';
+
 
 
 void main(){
@@ -73,7 +74,7 @@ class CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   }
 
   /// Nimmt entweder eine Liste, einen String (mit ';' getrennt) oder null
-  /// und gibt IMMER eine List<String> zurück (bereinigt, ohne Leereinträge).
+  /// und gibt IMMER eine List<String> zurück
   List<String> _normalizeList(dynamic raw) {
     if (raw == null) return [];
     if (raw is List) {
@@ -138,7 +139,7 @@ class CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         final key = parts[0].trim();
         final value = parts.sublist(1).join(':').trim();
 
-        // ✔ Kommagetrennt ODER Semikolon-getrennt akzeptieren, Klammern entfernen
+        //Kommagetrennt ODER Semikolon-getrennt akzeptieren, Klammern entfernen
         bool isListField = (key == 'Datum' || key == 'Startzeit' || key == 'Endzeit');
         if (isListField && value.isNotEmpty) {
           final cleaned = value.replaceAll('[', '').replaceAll(']', '');
@@ -196,7 +197,7 @@ class CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       return;
     }
 
-    // 1) Loading-Dialog öffnen (modal, nicht wegklickbar)
+    // 1) Loading-Dialog öffnen
     if (!mounted) return;
     showDialog(
       context: context,
@@ -209,27 +210,32 @@ class CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     Map<String, dynamic>? parsedData;
 
     try {
-      // 2) Upload starten (mit Timeout – passe Dauer bei Bedarf an)
+      //Upload starten (mit Timeout)
       final imageFile = File(croppedImage);
       final serverResponse = await UploadService
           .uploadImage(imageFile, handwritten: _isHandwritten)
-          .timeout(const Duration(seconds: 30));
+          .timeout(const Duration(seconds: 120));
 
       if (serverResponse != null && serverResponse.isNotEmpty) {
-
-        // Falls der Server "Text"-Antwort liefert
         parsedData = _parseServerText(serverResponse);
-        print("Succsess Upload");
+        print("Erfolgreicher Upload");
 
       } else {
-        // Fallback: Dummy-Daten
-        print("Fallback auf Dummy-Daten!");
-        parsedData = await loadDummyData();
+        throw Exception("Leere Antwort vom Server");
       }
     } catch (e) {
-      // Fehler -> Fallback auf Dummy-Daten
-      print("Failed to upload image: $e");
-      parsedData = await loadDummyData();
+      print(e);
+      if (mounted) {
+        Navigator.of(context).pop(); // Lade-Dialog schließen
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Upload fehlgeschlagen: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+      return; // kein Navigieren weiter
     } finally {
       // 3) Loading-Dialog schließen (wenn noch offen)
       if (mounted && Navigator.of(context).canPop()) {
@@ -237,7 +243,7 @@ class CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       }
     }
 
-    if (!mounted) return;
+    if (!mounted || parsedData == null) return;
 
     // 4) Zur Edit-Seite navigieren
     Navigator.push(
@@ -285,7 +291,7 @@ class CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   // Funktion zum Laden der Dummy-Daten aus einer Datei
   Future<Map<String, dynamic>> loadDummyData() async {
 
-    print("BEGIN LOAD DATA!");
+    print("Load Dummy Data!");
     final raw = await rootBundle.loadString('assets/dummy_data.txt');
     final lines = raw.split('\n');
     Map<String, dynamic> data = {};
